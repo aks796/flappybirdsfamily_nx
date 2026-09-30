@@ -1,0 +1,19 @@
+# build outputs
+/build/
+/portlibs32/
+/fbf_nx.elf
+/fbf_nx.nsp
+/fbf_nx.build
+/launcher/build/
+/launcher/romfs/
+/launcher/*.elf
+/launcher/*.nacp
+/launcher/*.nro
+/SD_CARD/
+/SD_CARD.zip
+# never commit game files or logs
+*.apk
+*.log
+/debug/
+__pycache__/
+.DS_Store
