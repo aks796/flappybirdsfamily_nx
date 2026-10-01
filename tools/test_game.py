@@ -30,6 +30,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(HERE)
 SRC = os.path.join(TOP, 'source')
+RT = os.path.join(TOP, 'runtime', 'source')  # the android32 runtime's headers and files
 
 HARNESS = r'''
 #include <stdio.h>
@@ -178,9 +179,9 @@ def main():
         exe = os.path.join(t, 'h')
         subprocess.check_call(['cc', '-O1', '-g', '-Wall', '-Wextra', '-Wno-unused-parameter',
                                '-fsanitize=address,undefined', '-fno-sanitize-recover=undefined',
-                               '-I', os.path.join(HERE, 'host'), '-I', SRC, src,
+                               '-I', os.path.join(HERE, 'host'), '-I', SRC, '-I', RT, '-DPORT_PAYLOAD_NAME="fbf_nx"', src,
                                os.path.join(SRC, 'fbf_assets.c'), os.path.join(SRC, 'fbf_prefs.c'),
-                               os.path.join(SRC, 'fbf_gate.c'), os.path.join(SRC, 'dcr_manifest.c'),
+                               os.path.join(SRC, 'fbf_gate.c'), os.path.join(RT, 'dcr_manifest.c'),
                                os.path.join(HERE, 'host', 'miniz_host.c'),
                                '-lz', '-o', exe])
         out = subprocess.check_output([exe, 'units']).decode()

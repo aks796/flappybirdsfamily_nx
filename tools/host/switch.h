@@ -30,6 +30,7 @@ enum {
 };
 #define HidNpadStyleSet_NpadStandard 0x1f
 enum { HidNpadJoyHoldType_Horizontal = 1 };
+typedef int HidNpadIdType;
 
 typedef struct {
   s32 x, y;
@@ -78,6 +79,7 @@ static inline HidAnalogStickState padGetStickPos(const PadState *p, int i) { ret
 extern u64 host_tick;
 static inline u64 armGetSystemTick(void) { return host_tick; }
 static inline u64 armGetSystemTickFreq(void) { return 19200000; }
+static inline u64 armNsToTicks(u64 ns) { return (ns * 12) / 625; }
 
 typedef struct {
   u32 finger_id, x, y;

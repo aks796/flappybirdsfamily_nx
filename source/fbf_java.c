@@ -67,7 +67,6 @@ const char *const jni_missing_classes[] = {
 
 void fbf_java_init(void) {
   jni_init();
-  g_jni_log = dcr_config()->log_jni;
   g_activity = jni_singleton(GA);
   g_jnilib = jni_class(JL)->obj;
   debugPrintf("[java] GameActivity %p, dot_JNILib %p; package %s\n", (void *)g_activity, g_jnilib,

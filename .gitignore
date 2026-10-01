@@ -1,19 +1,15 @@
-# build outputs
-/build/
-/portlibs32/
-/fbf_nx.elf
-/fbf_nx.nsp
-/fbf_nx.build
-/launcher/build/
-/launcher/romfs/
-/launcher/*.elf
-/launcher/*.nacp
-/launcher/*.nro
-/SD_CARD/
+# the android32 runtime and the Mesa build: links while developing
+/runtime
+/portlibs32
+/build
+/SD_CARD
 /SD_CARD.zip
-# never commit game files or logs
+*.nsp
+*.elf
+*.build
+/launcher/build
+/launcher/romfs
+/launcher/*.nro
+/launcher/*.nacp
+/launcher/*.elf
 *.apk
-*.log
-/debug/
-__pycache__/
-.DS_Store

@@ -1,10 +1,6 @@
 #!/bin/sh
-# Build flappybirdsfamily_nx.nro (the launcher) in devkitPro's 64-bit toolchain
-# container. Build the wrapper first (../build.sh): the NRO carries
-# ../fbf_nx.nsp and ../fbf_nx.build.
-set -e
+# Build flappybirdsfamily_nx.nro (the launcher) with the runtime's launcher
+# build (devkitPro's 64-bit toolchain container). Build the wrapper first
+# (../build.sh): the NRO carries ../fbf_nx.nsp and ../fbf_nx.build.
 HERE="$(cd "$(dirname "$0")" && pwd)"
-[ -f "$HERE/../fbf_nx.nsp" ] && [ -f "$HERE/../fbf_nx.build" ] || { echo "build the wrapper first (../build.sh)"; exit 1; }
-exec docker run --rm --platform linux/amd64 \
-  -v "$HERE/..:/work" -w /work/launcher devkitpro/devkita64:latest \
-  bash -lc "make -j\$(nproc) $*"
+LAUNCHER_DIR="$HERE" PAYLOAD=fbf_nx exec "$HERE/../runtime/launcher/build.sh" "$@"

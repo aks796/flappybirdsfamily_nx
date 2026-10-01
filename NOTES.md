@@ -5,6 +5,14 @@ a 32-bit (AArch32) process. They cover what the 32-bit libraries needed,
 what was specific to this game, and what may help anyone porting another
 32-bit Android game.
 
+**The android32 runtime.** Since build 202610010027 the shared files -- the
+loader, bionic shims, JNI core, GL glue, audout, clocks, paths, setup, the
+config engine, crash handler, watchdog, `main()` and the launcher -- come from
+android32 (`runtime/`, commit `81b772b`), shared by all the 32-bit ports. This
+repository keeps Flappy Birds Family's own code (`source/fbf_*.c`, its
+`port_config.h`, `dcr_config.c` option table and `fbf_main.c`). File names
+below that are not `fbf_*` now refer to `runtime/source/`.
+
 Toolchain used:
 
 * **AArch32 wrapper**: devkitARM from the vita2hos container
@@ -213,8 +221,23 @@ These are not library bugs.
   therefore need priority 59 and a core mask of 0–2 (`source/dcr_sched.c`).
 * **Faults:** on a fault the kernel re-enters the program at its entry point
   with a stack of under 448 bytes, and restores only what it saved.
-* **HOME:** HOME suspends the whole process. No focus callback runs before
-  it, and the first frame afterwards sees the whole gap as its time step.
+* **HOME and sleep** freeze the whole process.
+  * With libnx's default focus mode (`SuspendHomeSleep`) no focus message
+    arrives for them, so a focus hook never runs. This port's hardware log
+    showed a 45 s HOME visit and no "focus lost" line.
+  * The system tick keeps counting through the freeze, so the first frame
+    after it sees the whole gap.
+  * This port sets `AppletFocusHandlingMode_SuspendHomeSleepNotify`, and also
+    takes any frame longer than 2 s for a freeze. It then does what Android
+    did around HOME: held keys are let go, and the engine is paused and
+    resumed (`fbf_game.c`).
+  * The watchdog does not report a freeze as a hang (`watchdog.c`).
+  * The clocks are not shifted: the engine steps from `gettimeofday` but
+    never by more than 25 ms a frame (`dot_Engine::enterFrame`), so a freeze
+    costs one 25 ms step.
+  * A game that steps from real time without such a cap needs the gap
+    removed from its clock (the Disney Crossy Road: SEA and Asphalt 8 ports
+    do this).
 
 ---
 
@@ -360,10 +383,22 @@ the score digits and the panel's BEST label match exactly
   * does not enforce page permissions;
   * fails the time service's shared memory for 32-bit processes;
   * uses the older `svcWaitForAddress` layout;
+  * cannot translate `MRC p15, c14` (CNTFRQ), which libnx's
+    `armGetSystemTickFreq()` reads on AArch32. Use `armNsToTicks()` (a fixed
+    19.2 MHz conversion) instead; this port does;
   * cannot execute the A32 fixed-point `VCVT` that nouveau's
-    `nv50_sampler_state_create` uses, so it stops at the first textured
-    draw. This game gets that far on Ryujinx (folder move, APK, setup,
-    engine, self-tests, EGL) and stops at its splash picture. Build
-    202609300923 was checked this way against libnx32 `41b61f92`.
+    `nv50_sampler_state_create` uses. Up to build 202609301843 the game
+    stopped at its splash picture there.
+  * Since the android32 runtime (build 202610010027), its emulator fix-ups
+    (`RT_EMU_FIXUPS`, the default 1) rewrite those instructions under an
+    emulator only; on hardware nothing is rewritten. The game then gets past
+    its splash, through the JNI, preferences, audio, input and the first
+    frames, and Ryujinx stops later, on a memory exception inside the engine
+    (a sign-extended address, `libflapfire.so+0x264a2`).
+  * The GL self-test's triangle reads black (000000) under those fix-ups, an
+    emulator-only result.
+  * The setting stays 1, because reaching the game helps testing more than a
+    passing self-test does; `#define RT_EMU_FIXUPS 0` in `port_config.h`
+    gives the old behaviour.
 * **Log a lot, but not from the frame loop.** This port writes the log to a
   RAM ring during play and flushes it every 10 s and on a crash.

@@ -28,6 +28,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(HERE)
 SRC = os.path.join(TOP, 'source')
+RT = os.path.join(TOP, 'runtime', 'source')  # the android32 runtime's headers and files
 
 HARNESS = r'''
 #include <stdarg.h>
@@ -228,7 +229,7 @@ def main():
         exe = os.path.join(t, 'h')
         subprocess.check_call(['cc', '-O1', '-g', '-Wall', '-Wextra', '-Wno-unused-parameter',
                                '-fsanitize=address,undefined', '-fno-sanitize-recover=undefined',
-                               '-I', os.path.join(HERE, 'host'), '-I', SRC, src,
+                               '-I', os.path.join(HERE, 'host'), '-I', SRC, '-I', RT, '-DPORT_PAYLOAD_NAME="fbf_nx"', src,
                                os.path.join(SRC, 'fbf_menu.c'), '-o', exe])
         r = subprocess.run([exe], capture_output=True, text=True)
         print(r.stdout.strip())

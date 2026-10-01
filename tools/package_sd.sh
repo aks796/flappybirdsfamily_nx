@@ -19,11 +19,10 @@ cd "$HERE"
 [ -f portlibs32/lib/libEGL.a ] || tools/get_portlibs.sh
 ./build.sh
 launcher/build.sh
-python3 tools/gen_imports.py --check
+python3 runtime/tools/gen_imports.py --check
 python3 tools/test_input.py
 python3 tools/test_menu.py
 python3 tools/test_ui.py
-python3 tools/test_folder.py ${1:+"$1"}
 if [ -n "$1" ]; then
   python3 tools/check_engine.py "$1"
   python3 tools/test_ui.py "$1"

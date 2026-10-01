@@ -18,6 +18,7 @@
 #include <switch.h>
 
 #include "codespace.h"
+#include "dcr_path.h"
 #include "config.h"
 #include "error.h"
 #include "fbf.h"
@@ -25,56 +26,17 @@
 #include "so_util.h"
 #include "util.h"
 
-const char *dcr_game_root(void); /* main.c */
 
 so_module g_mod_game;
 FbfNatives g_n;
 
-/* ------------------------------------------ code writes: none in this game
- * The shared memory shims (bionic_mem.c) ask codespace.h first; the PvZ port
- * answers there for its mod's run-time hooks. This engine mmaps no code and
- * mprotects none, so every question gets "not mine". */
-volatile int g_cs_armed;
-void *cs_mmap(size_t len, int prot, const void *caller) { return NULL; }
-int cs_munmap(void *addr, size_t len) { return 0; }
-int cs_mprotect(void *addr, size_t len, int prot, const void *caller) { return 0; }
-int cs_write(void *dst, const void *src, size_t n, int c, int kind) { return 0; }
-
-/* libgcc's __sync_* on ARM Linux call the kernel's user helpers through
- * literal pools (kuser.S). This build of the engine has none (its atomics are
- * inline LDREX/STREX), but another build of it might: point any such literal
- * at ours, as the PvZ loader does, and report helpers not provided. */
-void dcr_kuser_cmpxchg(void);
-void dcr_kuser_memory_barrier(void);
-
-static void fix_kuser_helpers(so_module *m) {
-  int cmpxchg = 0, barrier = 0, other = 0;
-  for (int i = 0; i < m->phnum; i++) {
-    const Elf32_Phdr *ph = &m->phdr[i];
-    if (ph->p_type != PT_LOAD || !(ph->p_flags & PF_X))
-      continue;
-    uint32_t *w = (uint32_t *)((uintptr_t)((uint8_t *)m->load_base + ph->p_vaddr + 3) & ~3u);
-    size_t nw = ph->p_filesz / 4;
-    for (size_t k = 0; k < nw; k++) {
-      if ((w[k] & 0xfffff000u) != 0xffff0000u || (w[k] & 0xfff) < 0xf60)
-        continue;
-      if (w[k] == 0xffff0fc0u) {
-        w[k] = (uint32_t)(uintptr_t)dcr_kuser_cmpxchg;
-        cmpxchg++;
-      } else if (w[k] == 0xffff0fa0u) {
-        w[k] = (uint32_t)(uintptr_t)dcr_kuser_memory_barrier;
-        barrier++;
-      } else if (w[k] == 0xffff0f60u || w[k] == 0xffff0fe0u || w[k] == 0xffff0ffcu) {
-        if (other++ < 4)
-          debugPrintf("[boot] %s+0x%x: kernel helper 0x%08x not provided\n", m->base_name,
-                      (unsigned)((uintptr_t)&w[k] - (uintptr_t)m->load_base), (unsigned)w[k]);
-      }
-    }
-  }
-  if (cmpxchg || barrier || other)
-    debugPrintf("[boot] %s: libgcc atomics -> kuser.S (%d cmpxchg, %d barrier%s)\n", m->base_name,
-                cmpxchg, barrier, other ? ", others NOT handled" : "");
-}
+/* Code writes: none in this game. The runtime's codespace defaults
+ * (so_util.c) answer the shared memory shims for a loaded module's pages.
+ *
+ * libgcc's __sync_* on ARM Linux call the kernel's user helpers through
+ * literal pools. This build of the engine has none (its atomics are inline
+ * LDREX/STREX), but another build of it might: so_fix_kuser_helpers points
+ * any such literal at the runtime's kuser.S and reports helpers it lacks. */
 
 /* ---------------------------------------------------------------- natives */
 #define JNI_ "Java_com_dotgears_dot_1JNILib_"
@@ -120,11 +82,11 @@ static int bind_natives(void) {
 int fbf_load_engine(void) {
   char path[512];
   snprintf(path, sizeof path, "%s/%s", dcr_game_root(), FBF_LIB);
-  int rc = so_load(&g_mod_game, path, NULL, SO_REGION_BYTES);
+  int rc = so_load(&g_mod_game, path, NULL, PORT_SO_REGION_BYTES);
   if (rc < 0) {
     const char *why = rc == -1 ? "cannot open it, or it is not a 32-bit ARM ELF"
                     : rc == -2 ? "out of memory"
-                    : rc == -3 ? "larger than SO_REGION_BYTES"
+                    : rc == -3 ? "larger than PORT_SO_REGION_BYTES"
                     : rc == -4 ? "too many program headers" : "?";
     debugPrintf("[boot] so_load(%s) failed rc=%d: %s\n", path, rc, why);
     return -1;
@@ -134,7 +96,7 @@ int fbf_load_engine(void) {
   debugPrintf("[boot] %s %u KB  staged %p -> %p  (%d unresolved imports)\n", g_mod_game.base_name,
               (unsigned)(g_mod_game.load_size >> 10), g_mod_game.load_base, g_mod_game.load_virtbase,
               missing);
-  fix_kuser_helpers(&g_mod_game);
+  so_fix_kuser_helpers(&g_mod_game);
   so_finalize(&g_mod_game);
   so_flush_caches(&g_mod_game);
   if (bind_natives()) {

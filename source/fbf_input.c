@@ -65,6 +65,7 @@
 
 #include "dcr_config.h"
 #include "fbf.h"
+#include "rt_pad.h"
 #include "util.h"
 
 static const struct {
@@ -182,7 +183,7 @@ static void log_controller(Source *s) {
 
 void fbf_input_init(void) {
   /* Every slot and style accepted: extra controllers stay connected. */
-  padConfigureInput(8, HidNpadStyleSet_NpadStandard);
+  rt_pad_setup(8, 1); /* every slot and the handheld, any standard style */
   Result rc = hidSetNpadJoyHoldType(HidNpadJoyHoldType_Horizontal);
   if (R_FAILED(rc))
     debugPrintf("[input] hidSetNpadJoyHoldType: 0x%x\n", rc);
@@ -255,7 +256,8 @@ static void log_raw(Source *s) {
   }
   const int pushed = abs(r0.x) > 12000 || abs(r0.y) > 12000 || abs(r1.x) > 12000 || abs(r1.y) > 12000;
   const u64 now = armGetSystemTick();
-  if (pushed && now - s->stick_log_tick > armGetSystemTickFreq() / 4) {
+  if (pushed && now - s->stick_log_tick > armNsToTicks(250000000ull)) { /* not armGetSystemTickFreq: its
+                                                                       * CNTFRQ read stops Ryujinx */
     s->stick_log_tick = now;
     const HidAnalogStickState t = stick_of(s);
     debugPrintf("[input] %s: sticks [0] %6d,%6d [1] %6d,%6d -> %6d,%6d%s\n", s->name, (int)r0.x, (int)r0.y,

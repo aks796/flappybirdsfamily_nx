@@ -153,7 +153,6 @@ void fbf_audio_pause(int paused); /* HOME: voices hold, nothing is mixed */
 void fbf_audio_shutdown(void);
 uint32_t dcr_audio_blocks(void);  /* blocks mixed so far (the watchdog) */
 unsigned long dcr_audio_underruns(void); /* times audout ran dry (after HOME: once, expected) */
-void dcr_audio_selftest(void);
 
 /* ------------------------------------------------------------ assets */
 typedef struct {

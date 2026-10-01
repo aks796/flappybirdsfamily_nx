@@ -70,6 +70,8 @@ letter or done, **B** back, **+** done.
 ### Requirements
 
 * Docker
+* The [android32](https://github.com/aks796/android32) runtime at `runtime/`
+  (a submodule; a symlink while developing)
 * The vita2hos container (`ghcr.io/vita2hos/devcontainer/vita2hos`), for
   devkitARM and libnx32
 * [libnx32](https://github.com/aks796/libnx32) 4.12.0 or newer, the 32-bit

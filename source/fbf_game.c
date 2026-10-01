@@ -42,19 +42,18 @@
 #include <switch.h>
 
 #include "config.h"
+#include "dcr_boost.h"
 #include "dcr_config.h"
 #include "dcr_path.h"
-#include "dcr_time.h"
 #include "error.h"
 #include "fbf.h"
 #include "fbf_gl.h"
 #include "gl_layer.h"
 #include "jni.h"
+#include "rt_applet.h"
+#include "rt_window.h"
 #include "util.h"
-
-void dcr_watchdog_start(void);
-void dcr_boost_launch_end(void);
-void dcr_boost_report(void);
+#include "watchdog.h"
 const char *dcr_game_root(void);
 
 #define ENV g_jni_env
@@ -90,7 +89,6 @@ fEGLint b_eglGetError(void);
 static FbfPrefs g_prefs;
 static FbfKeyGate g_gate;
 static volatile int g_exit;
-static volatile int g_focused = 1, g_focus_changed;
 static int g_engine_up;     /* init + setAtlas done: the renderer's "j.a" */
 static int g_user_paused;   /* + */
 static int g_swallow_touch_up;
@@ -100,7 +98,6 @@ static void *g_dpy, *g_surf, *g_ctx;
 
 /* For the watchdog: frames presented, and whether frames are expected. */
 uint64_t dcr_boot_frames(void) { return dcr_gl_frames(); }
-int dcr_boot_in_focus(void) { return g_focused && g_engine_up; }
 
 int fbf_user_paused(void) { return g_user_paused; }
 
@@ -372,41 +369,36 @@ static int splash_end(void) {
 }
 
 /* --------------------------------------------------------- lifecycle */
-static AppletHookCookie g_hook;
-
-static void on_applet(AppletHookType type, void *param) {
-  (void)param;
-  if (type == AppletHookType_OnExitRequest)
-    debugPrintf("[applet] the system asked the game to close\n");
-  if (type == AppletHookType_OnFocusState || type == AppletHookType_OnOperationMode) {
-    int focused = appletGetFocusState() == AppletFocusState_InFocus;
-    if (focused != g_focused) {
-      g_focused = focused;
-      g_focus_changed = 1;
-    }
-  }
+/* The runtime's applet lifecycle (rt_applet.c) calls these from the frame
+ * loop's rt_applet_poll(): what GameActivity's onPause / onResume did.
+ * Focus lost: held keys let go (Android sends them as cancelled), the engine
+ * paused (unless + already paused it), the sound held; the runtime then
+ * writes out the log and stops the clocks. */
+void port_focus_lost(void) {
+  fbf_input_reset();
+  memset(&g_gate, 0, sizeof g_gate);
+  if (g_engine_up && !g_user_paused)
+    g_n.pause(ENV, CLS);
+  fbf_audio_pause(1);
 }
 
-static void apply_focus(void) {
-  if (!g_focus_changed)
-    return;
-  g_focus_changed = 0;
-  if (!g_focused) {
-    debugPrintf("[game] focus lost: onPause%s\n", g_user_paused ? " (already paused)" : "");
-    fbf_input_reset();
-    memset(&g_gate, 0, sizeof g_gate);
-    if (g_engine_up && !g_user_paused)
-      g_n.pause(ENV, CLS);
-    fbf_audio_pause(1);
-    log_flush_ring();
-    dcr_time_suspend();
-  } else {
-    dcr_time_resume();
-    fbf_audio_pause(0);
-    if (g_engine_up && !g_user_paused)
-      g_n.resume(ENV, CLS, -1, -1);
-    debugPrintf("[game] focus regained: onResume\n");
-  }
+void port_focus_gained(void) {
+  fbf_audio_pause(0);
+  if (g_engine_up && !g_user_paused)
+    g_n.resume(ENV, CLS, -1, -1);
+}
+
+/* HOME and sleep freeze the whole process; the runtime's clocks find each
+ * freeze (whether or not focus messages came, which libnx's default focus
+ * mode never sent: hardware run 2026-09-25, 45 s at HOME). What Android
+ * does around it, onPause then onResume: held keys let go, the engine
+ * paused and resumed (which restarts its frame clock). The engine steps
+ * from gettimeofday but never by more than 25 ms a frame
+ * (dot_Engine::enterFrame), so the clocks need no correcting. */
+void port_process_frozen(unsigned count) {
+  debugPrintf("[game] the process was held (HOME menu or sleep; freeze %u)\n", count);
+  port_focus_lost();
+  port_focus_gained();
 }
 
 /* ------------------------------------------------ the controller screen */
@@ -431,7 +423,9 @@ int fbf_controller_screen(void) {
   fbf_audio_pause(1);
   HidLaControllerSupportResultInfo info;
   memset(&info, 0, sizeof info);
+  dcr_applet_busy(1); /* a system screen holds this thread: no frames, and nothing wrong */
   Result rc = hidLaShowControllerSupport(&info, &arg);
+  dcr_applet_busy(0);
   fbf_audio_pause(0);
   if (!was_paused)
     g_n.resume(ENV, CLS, -1, -1);
@@ -557,8 +551,10 @@ int fbf_game_run(void) {
     log_flush_ring();
     return 0;
   }
-  appletHook(&g_hook, on_applet, NULL);
+  /* (HOME / sleep: the runtime's main() set the focus mode and the hook,
+   * rt_applet.c; the loop below polls it.) */
   dcr_watchdog_start();
+  rt_watchdog_add_counter("audio blocks", dcr_audio_blocks);
 
   /* ---- renderer.onSurfaceChanged, the first time ---- */
   debugPrintf("[game] dot_JNILib.init(%dx%d), setHighScore(%d)\n", g_w, g_h, g_prefs.score);
@@ -587,9 +583,9 @@ int fbf_game_run(void) {
   u64 last_report = armGetSystemTick(), last_frame = last_report;
   int first = 1;
   unsigned long quiet_at = 0;
-  while (!g_exit && appletMainLoop()) {
-    apply_focus();
-    if (!g_focused) {
+  while (!g_exit && !rt_exit_requested() && appletMainLoop()) {
+    rt_applet_poll(); /* focus, freezes: port_focus_lost/gained, port_process_frozen */
+    if (!rt_focused()) {
       svcSleepThread(50000000ll);
       continue;
     }
@@ -641,8 +637,8 @@ int fbf_game_run(void) {
   /* ---- onPause, onStop, onDestroy ---- */
   debugPrintf("[game] leaving (%s)\n", g_exit ? "Back on the main menu" : "closed from the system");
   log_set_quiet(0);
-  appletUnhook(&g_hook);
-  if (g_engine_up && g_focused && !g_user_paused)
+  rt_applet_stop();
+  if (g_engine_up && rt_focused() && !g_user_paused)
     g_n.pause(ENV, CLS);
   if (g_n.stop)
     g_n.stop(ENV, CLS);

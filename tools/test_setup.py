@@ -93,7 +93,8 @@ def main():
         open(src, 'w').write(HARNESS)
         exe = os.path.join(t, 'h')
         subprocess.check_call(['cc', '-O1', '-Wall', '-fsanitize=address,undefined', '-I',
-                               os.path.join(TOP, 'source'), '-o', exe, src])
+                               os.path.join(TOP, 'source'), '-I', os.path.join(TOP, 'runtime', 'source'), '-DPORT_PAYLOAD_NAME="fbf_nx"',
+                               '-o', exe, src])
 
         # 1. the override
         tid = 0x0571D2F4CB1CF000

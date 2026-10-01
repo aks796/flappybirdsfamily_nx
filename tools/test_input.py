@@ -30,6 +30,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(HERE)
 SRC = os.path.join(TOP, 'source')
+RT = os.path.join(TOP, 'runtime', 'source')  # the android32 runtime's headers and files
 
 HARNESS = r'''
 #include <stdarg.h>
@@ -59,6 +60,7 @@ static void add(const char *fmt, ...) {
 }
 void fbf_key(int down, int code, int dev) { add("%c%d@%d", down ? '+' : '-', code, dev); }
 void fbf_touch(int down, int x, int y) { add("t%c%d,%d", down ? '+' : '-', x, y); }
+Result rt_pad_setup(int max_players, int handheld) { (void)max_players, (void)handheld; return 0; }
 void fbf_pause_toggle(void) { paused = !paused; add(paused ? "PAUSE" : "RESUME"); if (paused) fbf_input_swallow_held(); }
 int fbf_user_paused(void) { return paused; }
 
@@ -240,7 +242,7 @@ def main():
         exe = os.path.join(t, 'h')
         subprocess.check_call(['cc', '-O1', '-g', '-Wall', '-Wextra', '-Wno-unused-parameter',
                                '-fsanitize=address,undefined', '-fno-sanitize-recover=undefined',
-                               '-I', os.path.join(HERE, 'host'), '-I', SRC, src,
+                               '-I', os.path.join(HERE, 'host'), '-I', SRC, '-I', RT, '-DPORT_PAYLOAD_NAME="fbf_nx"', src,
                                os.path.join(SRC, 'fbf_input.c'), '-o', exe])
         r = subprocess.run([exe], capture_output=True, text=True)
         print(r.stdout.strip())
